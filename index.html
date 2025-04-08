@@ -103,7 +103,460 @@
     </div>
 
     <script>
-        // JavaScript代码将放在这里
+        // 初始化Konva舞台
+const width = document.getElementById('canvas-container').clientWidth;
+const height = document.getElementById('canvas-container').clientHeight;
+
+const stage = new Konva.Stage({
+    container: 'canvas-container',
+    width: width,
+    height: height,
+});
+
+// 创建层
+const floorLayer = new Konva.Layer(); // 楼层背景
+const roomLayer = new Konva.Layer();  // 房间图层
+const tempLayer = new Konva.Layer();  // 临时绘制图层
+stage.add(floorLayer);
+stage.add(roomLayer);
+stage.add(tempLayer);
+
+// 创建背景楼层矩形
+const floorWidth = Math.min(width * 0.8, height * 0.8);
+const floorHeight = floorWidth * 0.75;
+const floorRect = new Konva.Rect({
+    x: (width - floorWidth) / 2,
+    y: (height - floorHeight) / 2,
+    width: floorWidth,
+    height: floorHeight,
+    fill: '#f8f8f8',
+    stroke: '#666',
+    strokeWidth: 2,
+    name: 'floor'
+});
+floorLayer.add(floorRect);
+floorLayer.draw();
+
+// 状态变量
+let activeToolBtn = null;
+let isDrawing = false;
+let currentShape = null;
+let polygonPoints = [];
+let transformer = new Konva.Transformer({
+    rotateEnabled: true,
+    borderDash: [4, 4],
+    boundBoxFunc: function(oldBoundBox, newBoundBox) {
+        // 限制不要超出楼层边界
+        const floorBox = floorRect.getClientRect();
+        if (
+            newBoundBox.x < floorBox.x ||
+            newBoundBox.y < floorBox.y ||
+            newBoundBox.x + newBoundBox.width > floorBox.x + floorBox.width ||
+            newBoundBox.y + newBoundBox.height > floorBox.y + floorBox.height
+        ) {
+            return oldBoundBox;
+        }
+        return newBoundBox;
+    },
+});
+roomLayer.add(transformer);
+
+// 工具按钮处理函数
+document.querySelectorAll('.tool-btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+        // 重置其他按钮的状态
+        if (activeToolBtn) {
+            activeToolBtn.classList.remove('active');
+        }
+        
+        // 设置当前按钮状态
+        this.classList.add('active');
+        activeToolBtn = this;
+        
+        // 停止任何正在进行的绘制
+        isDrawing = false;
+        if (currentShape) {
+            currentShape.remove();
+            currentShape = null;
+        }
+        polygonPoints = [];
+        tempLayer.draw();
+        
+        // 如果选择了"选择"工具，启用选择模式
+        if (this.id === 'select') {
+            stage.container().style.cursor = 'default';
+            enableSelectionMode();
+        } else {
+            disableSelectionMode();
+            stage.container().style.cursor = 'crosshair';
+        }
+        
+        // 如果选择了"删除"工具
+        if (this.id === 'delete') {
+            deleteSelectedShape();
+            // 重置为选择模式
+            document.getElementById('select').click();
+        }
+        
+        // 如果选择了"清空画布"工具
+        if (this.id === 'clear') {
+            clearCanvas();
+            // 重置为选择模式
+            document.getElementById('select').click();
+        }
+    });
+});
+
+// 颜色选择器事件监听
+document.getElementById('fillColor').addEventListener('change', function() {
+    if (transformer.nodes().length > 0) {
+        transformer.nodes().forEach(node => {
+            node.fill(this.value);
+        });
+        roomLayer.batchDraw();
+    }
+});
+
+document.getElementById('strokeColor').addEventListener('change', function() {
+    if (transformer.nodes().length > 0) {
+        transformer.nodes().forEach(node => {
+            node.stroke(this.value);
+        });
+        roomLayer.batchDraw();
+    }
+});
+
+// 画布事件处理
+stage.on('mousedown', function(e) {
+    // 确保点击在楼层矩形内部
+    const point = {
+        x: stage.getPointerPosition().x,
+        y: stage.getPointerPosition().y
+    };
+    
+    const floorBox = floorRect.getClientRect();
+    if (
+        point.x < floorBox.x ||
+        point.y < floorBox.y ||
+        point.x > floorBox.x + floorBox.width ||
+        point.y > floorBox.y + floorBox.height
+    ) {
+        return;
+    }
+    
+    // 根据当前工具进行绘制
+    switch (activeToolBtn?.id) {
+        case 'rectangle':
+            isDrawing = true;
+            const rect = new Konva.Rect({
+                x: point.x,
+                y: point.y,
+                width: 0,
+                height: 0,
+                fill: document.getElementById('fillColor').value,
+                stroke: document.getElementById('strokeColor').value,
+                strokeWidth: 2,
+                draggable: false,
+                name: 'room'
+            });
+            currentShape = rect;
+            tempLayer.add(rect);
+            break;
+            
+        case 'polygon':
+            if (!isDrawing) {
+                isDrawing = true;
+                polygonPoints = [point.x, point.y];
+                currentShape = new Konva.Line({
+                    points: polygonPoints,
+                    fill: document.getElementById('fillColor').value,
+                    stroke: document.getElementById('strokeColor').value,
+                    strokeWidth: 2,
+                    closed: true,
+                    name: 'room'
+                });
+                tempLayer.add(currentShape);
+            } else {
+                polygonPoints.push(point.x);
+                polygonPoints.push(point.y);
+                currentShape.points(polygonPoints);
+            }
+            break;
+            
+        case 'circle':
+            isDrawing = true;
+            const circle = new Konva.Circle({
+                x: point.x,
+                y: point.y,
+                radius: 0,
+                fill: document.getElementById('fillColor').value,
+                stroke: document.getElementById('strokeColor').value,
+                strokeWidth: 2,
+                draggable: false,
+                name: 'booth'
+            });
+            currentShape = circle;
+            tempLayer.add(circle);
+            break;
+            
+        case 'star':
+            isDrawing = true;
+            const star = new Konva.Star({
+                x: point.x,
+                y: point.y,
+                numPoints: 5,
+                innerRadius: 0,
+                outerRadius: 0,
+                fill: document.getElementById('fillColor').value,
+                stroke: document.getElementById('strokeColor').value,
+                strokeWidth: 2,
+                draggable: false,
+                name: 'booth'
+            });
+            currentShape = star;
+            tempLayer.add(star);
+            break;
+    }
+    
+    tempLayer.draw();
+});
+
+stage.on('mousemove', function() {
+    if (!isDrawing || !currentShape) return;
+    
+    const pos = stage.getPointerPosition();
+    const startX = currentShape.attrs.x || polygonPoints[0];
+    const startY = currentShape.attrs.y || polygonPoints[1];
+    
+    switch (activeToolBtn?.id) {
+        case 'rectangle':
+            const width = pos.x - startX;
+            const height = pos.y - startY;
+            currentShape.width(width);
+            currentShape.height(height);
+            break;
+            
+        case 'polygon':
+            // 更新多边形的最后一个点
+            const points = [...polygonPoints];
+            points[points.length - 2] = pos.x;
+            points[points.length - 1] = pos.y;
+            currentShape.points(points);
+            break;
+            
+        case 'circle':
+            const dx = pos.x - startX;
+            const dy = pos.y - startY;
+            const radius = Math.sqrt(dx * dx + dy * dy);
+            currentShape.radius(radius);
+            break;
+            
+        case 'star':
+            const dx2 = pos.x - startX;
+            const dy2 = pos.y - startY;
+            const radius2 = Math.sqrt(dx2 * dx2 + dy2 * dy2);
+            currentShape.outerRadius(radius2);
+            currentShape.innerRadius(radius2 / 2);
+            break;
+    }
+    
+    tempLayer.batchDraw();
+});
+
+stage.on('dblclick', function() {
+    if (isDrawing && activeToolBtn?.id === 'polygon' && polygonPoints.length >= 6) {
+        finishDrawing();
+    }
+});
+
+stage.on('mouseup', function() {
+    if (!isDrawing || !currentShape) return;
+    
+    // 对于非多边形，鼠标抬起时完成绘图
+    if (activeToolBtn?.id !== 'polygon') {
+        finishDrawing();
+    }
+});
+
+// 完成绘图并添加到roomLayer
+function finishDrawing() {
+    isDrawing = false;
+    
+    // 检查形状是否有效（比如不是一个点或一条线）
+    let isValidShape = false;
+    
+    if (activeToolBtn?.id === 'rectangle') {
+        isValidShape = currentShape.width() !== 0 && currentShape.height() !== 0;
+    } else if (activeToolBtn?.id === 'polygon') {
+        isValidShape = polygonPoints.length >= 6; // 至少3个点
+    } else if (activeToolBtn?.id === 'circle') {
+        isValidShape = currentShape.radius() > 0;
+    } else if (activeToolBtn?.id === 'star') {
+        isValidShape = currentShape.outerRadius() > 0;
+    }
+    
+    if (isValidShape) {
+        const newShape = currentShape.clone({
+            draggable: true,
+        });
+        
+        roomLayer.add(newShape);
+        
+        // 为新形状添加事件处理
+        addShapeEventHandlers(newShape);
+    }
+    
+    // 清理临时图形
+    currentShape.remove();
+    currentShape = null;
+    polygonPoints = [];
+    tempLayer.draw();
+    roomLayer.draw();
+    
+    // 重置为选择模式
+    document.getElementById('select').click();
+}
+
+// 为形状添加事件处理器
+function addShapeEventHandlers(shape) {
+    shape.on('dragmove', function() {
+        updateCoordsInfo();
+        
+        // 确保形状不超出楼层范围
+        const floorBox = floorRect.getClientRect();
+        const shapeBox = shape.getClientRect();
+        
+        if (shapeBox.x < floorBox.x) {
+            shape.x(shape.x() + (floorBox.x - shapeBox.x));
+        }
+        if (shapeBox.y < floorBox.y) {
+            shape.y(shape.y() + (floorBox.y - shapeBox.y));
+        }
+        if (shapeBox.x + shapeBox.width > floorBox.x + floorBox.width) {
+            shape.x(shape.x() - ((shapeBox.x + shapeBox.width) - (floorBox.x + floorBox.width)));
+        }
+        if (shapeBox.y + shapeBox.height > floorBox.y + floorBox.height) {
+            shape.y(shape.y() - ((shapeBox.y + shapeBox.height) - (floorBox.y + floorBox.height)));
+        }
+    });
+    
+    shape.on('click', function(e) {
+        if (activeToolBtn?.id === 'select') {
+            // 阻止事件冒泡到stage
+            e.cancelBubble = true;
+            
+            // 清除现有选择
+            transformer.nodes([]);
+            
+            // 添加新选择
+            transformer.nodes([shape]);
+            roomLayer.batchDraw();
+            
+            // 更新坐标信息
+            updateCoordsInfo();
+        }
+    });
+    
+    shape.on('transform', function() {
+        updateCoordsInfo();
+    });
+}
+
+// 启用选择模式
+function enableSelectionMode() {
+    stage.on('click tap', function(e) {
+        // 如果点击的是舞台背景（不是形状），则清除选择
+        if (e.target === stage) {
+            transformer.nodes([]);
+            roomLayer.draw();
+            document.getElementById('coordsInfo').innerHTML = "坐标信息会显示在这里";
+        }
+    });
+}
+
+// 禁用选择模式
+function disableSelectionMode() {
+    transformer.nodes([]);
+    roomLayer.draw();
+}
+
+// 删除选中的形状
+function deleteSelectedShape() {
+    const selectedNodes = transformer.nodes();
+    if (selectedNodes.length === 0) return;
+    
+    selectedNodes.forEach(node => {
+        node.destroy();
+    });
+    
+    transformer.nodes([]);
+    roomLayer.draw();
+    document.getElementById('coordsInfo').innerHTML = "坐标信息会显示在这里";
+}
+
+// 清空画布
+function clearCanvas() {
+    const shapes = roomLayer.find('Shape');
+    shapes.each(shape => {
+        if (shape !== floorRect && shape !== transformer) {
+            shape.destroy();
+        }
+    });
+    
+    transformer.nodes([]);
+    roomLayer.draw();
+    document.getElementById('coordsInfo').innerHTML = "坐标信息会显示在这里";
+}
+
+// 更新坐标信息显示
+function updateCoordsInfo() {
+    const selectedNodes = transformer.nodes();
+    if (selectedNodes.length === 0) return;
+    
+    const node = selectedNodes[0];
+    let coordsText = "";
+    
+    if (node instanceof Konva.Rect) {
+        coordsText = `矩形：<br>`;
+        coordsText += `左上角：(${Math.round(node.x())}, ${Math.round(node.y())})<br>`;
+        coordsText += `右上角：(${Math.round(node.x() + node.width())}, ${Math.round(node.y())})<br>`;
+        coordsText += `左下角：(${Math.round(node.x())}, ${Math.round(node.y() + node.height())})<br>`;
+        coordsText += `右下角：(${Math.round(node.x() + node.width())}, ${Math.round(node.y() + node.height())})<br>`;
+        coordsText += `宽度：${Math.round(node.width())}，高度：${Math.round(node.height())}`;
+    } else if (node instanceof Konva.Circle) {
+        coordsText = `圆形：<br>`;
+        coordsText += `中心点：(${Math.round(node.x())}, ${Math.round(node.y())})<br>`;
+        coordsText += `半径：${Math.round(node.radius())}`;
+    } else if (node instanceof Konva.Line && node.closed()) {
+        coordsText = `多边形：<br>`;
+        const points = node.points();
+        for (let i = 0; i < points.length; i += 2) {
+            const absX = Math.round(node.x() + points[i]);
+            const absY = Math.round(node.y() + points[i + 1]);
+            coordsText += `点${i/2 + 1}：(${absX}, ${absY})<br>`;
+        }
+    } else if (node instanceof Konva.Star) {
+        coordsText = `星形：<br>`;
+        coordsText += `中心点：(${Math.round(node.x())}, ${Math.round(node.y())})<br>`;
+        coordsText += `外半径：${Math.round(node.outerRadius())}<br>`;
+        coordsText += `内半径：${Math.round(node.innerRadius())}`;
+    }
+    
+    document.getElementById('coordsInfo').innerHTML = coordsText;
+}
+
+// 默认选择"选择"工具
+document.getElementById('select').click();
+
+// 响应窗口大小变化
+window.addEventListener('resize', function() {
+    stage.width(document.getElementById('canvas-container').clientWidth);
+    stage.height(document.getElementById('canvas-container').clientHeight);
+    floorLayer.draw();
+    roomLayer.draw();
+    tempLayer.draw();
+});
+
     </script>
 </body>
 </html>
