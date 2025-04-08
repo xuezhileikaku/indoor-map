@@ -70,6 +70,16 @@
             max-height: 200px;
             overflow-y: auto;
         }
+        .info-text {
+            position: absolute;
+            bottom: 50px;
+            left: 220px;
+            background-color: rgba(255, 255, 255, 0.8);
+            padding: 5px 10px;
+            border-radius: 3px;
+            font-size: 12px;
+            display: none;
+        }
     </style>
 </head>
 <body>
@@ -100,6 +110,7 @@
         </div>
         <div class="canvas-container" id="canvas-container"></div>
         <div id="coordsInfo">坐标信息会显示在这里</div>
+        <div id="infoText" class="info-text"></div>
     </div>
 
     <script>
@@ -142,6 +153,7 @@
         let isDrawing = false;
         let currentShape = null;
         let polygonPoints = [];
+        let firstPoint = null;  // 多边形的第一个点，用于检测闭合
         let transformer = new Konva.Transformer({
             rotateEnabled: true,
             borderDash: [4, 4],
@@ -160,6 +172,9 @@
             },
         });
         roomLayer.add(transformer);
+        
+        // 信息提示元素
+        const infoText = document.getElementById('infoText');
 
         // 确保楼层正确显示
         window.addEventListener('load', function() {
@@ -193,21 +208,21 @@
                 activeToolBtn = this;
                 
                 // 停止任何正在进行的绘制
-                isDrawing = false;
-                if (currentShape) {
-                    currentShape.remove();
-                    currentShape = null;
-                }
-                polygonPoints = [];
-                tempLayer.draw();
+                endCurrentDrawing();
                 
                 // 如果选择了"选择"工具，启用选择模式
                 if (this.id === 'select') {
                     stage.container().style.cursor = 'default';
                     enableSelectionMode();
+                    hideInfoText();
+                } else if (this.id === 'polygon') {
+                    disableSelectionMode();
+                    stage.container().style.cursor = 'crosshair';
+                    showInfoText("点击添加多边形顶点，双击或点击起点结束绘制");
                 } else {
                     disableSelectionMode();
                     stage.container().style.cursor = 'crosshair';
+                    hideInfoText();
                 }
                 
                 // 如果选择了"删除"工具
@@ -225,6 +240,30 @@
                 }
             });
         });
+
+        // 显示信息文本
+        function showInfoText(text) {
+            infoText.textContent = text;
+            infoText.style.display = 'block';
+        }
+
+        // 隐藏信息文本
+        function hideInfoText() {
+            infoText.style.display = 'none';
+        }
+
+        // 结束当前绘制
+        function endCurrentDrawing() {
+            isDrawing = false;
+            if (currentShape) {
+                currentShape.remove();
+                currentShape = null;
+            }
+            polygonPoints = [];
+            firstPoint = null;
+            tempLayer.draw();
+            hideInfoText();
+        }
 
         // 颜色选择器事件监听
         document.getElementById('fillColor').addEventListener('change', function() {
@@ -284,22 +323,39 @@
                     break;
                     
                 case 'polygon':
+                    // 如果尚未开始绘制多边形
                     if (!isDrawing) {
                         isDrawing = true;
                         polygonPoints = [point.x, point.y];
+                        firstPoint = { x: point.x, y: point.y };
+                        
                         currentShape = new Konva.Line({
                             points: polygonPoints,
                             fill: document.getElementById('fillColor').value,
                             stroke: document.getElementById('strokeColor').value,
                             strokeWidth: 2,
-                            closed: true,
+                            closed: false, // 初始设置为不闭合
                             name: 'room'
                         });
                         tempLayer.add(currentShape);
+                        showInfoText("点击添加顶点，双击或点击起点结束绘制");
                     } else {
-                        polygonPoints.push(point.x);
-                        polygonPoints.push(point.y);
-                        currentShape.points(polygonPoints);
+                        // 检查是否点击了起点(闭合多边形)
+                        const distToFirst = Math.sqrt(
+                            Math.pow(point.x - firstPoint.x, 2) + 
+                            Math.pow(point.y - firstPoint.y, 2)
+                        );
+                        
+                        if (distToFirst < 20 && polygonPoints.length > 4) {
+                            // 点击了起点，闭合多边形
+                            finishPolygon();
+                        } else {
+                            // 添加新顶点
+                            polygonPoints.push(point.x);
+                            polygonPoints.push(point.y);
+                            currentShape.points(polygonPoints);
+                            tempLayer.batchDraw();
+                        }
                     }
                     break;
                     
@@ -342,14 +398,14 @@
         });
 
         stage.on('mousemove', function() {
-            if (!isDrawing || !currentShape) return;
+            if (!isDrawing || !currentShape || !activeToolBtn) return;
             
             const pos = stage.getPointerPosition();
-            const startX = currentShape.attrs.x || polygonPoints[0];
-            const startY = currentShape.attrs.y || polygonPoints[1];
             
             switch (activeToolBtn.id) {
                 case 'rectangle':
+                    const startX = currentShape.attrs.x;
+                    const startY = currentShape.attrs.y;
                     const width = pos.x - startX;
                     const height = pos.y - startY;
                     currentShape.width(width);
@@ -357,23 +413,47 @@
                     break;
                     
                 case 'polygon':
-                    // 更新多边形的最后一个点
-                    const points = [...polygonPoints];
-                    points[points.length - 2] = pos.x;
-                    points[points.length - 1] = pos.y;
-                    currentShape.points(points);
+                    // 更新多边形的最后一个点（用于实时预览）
+                    // 如果我们只有一个点，添加一个临时点供线条显示
+                    if (polygonPoints.length === 2) {
+                        polygonPoints.push(pos.x);
+                        polygonPoints.push(pos.y);
+                    } else {
+                        // 更新最后一个点
+                        polygonPoints[polygonPoints.length - 2] = pos.x;
+                        polygonPoints[polygonPoints.length - 1] = pos.y;
+                    }
+                    currentShape.points(polygonPoints);
+                    
+                    // 高亮显示起点，以便用户了解可以闭合多边形
+                    const distToFirst = Math.sqrt(
+                        Math.pow(pos.x - firstPoint.x, 2) + 
+                        Math.pow(pos.y - firstPoint.y, 2)
+                    );
+                    
+                    if (distToFirst < 20 && polygonPoints.length > 4) {
+                        stage.container().style.cursor = 'pointer';
+                        showInfoText("点击起点完成绘制");
+                    } else {
+                        stage.container().style.cursor = 'crosshair';
+                        showInfoText("点击添加顶点，双击或点击起点结束绘制");
+                    }
                     break;
                     
                 case 'circle':
-                    const dx = pos.x - startX;
-                    const dy = pos.y - startY;
+                    const startX2 = currentShape.attrs.x;
+                    const startY2 = currentShape.attrs.y;
+                    const dx = pos.x - startX2;
+                    const dy = pos.y - startY2;
                     const radius = Math.sqrt(dx * dx + dy * dy);
                     currentShape.radius(radius);
                     break;
                     
                 case 'star':
-                    const dx2 = pos.x - startX;
-                    const dy2 = pos.y - startY;
+                    const startX3 = currentShape.attrs.x;
+                    const startY3 = currentShape.attrs.y;
+                    const dx2 = pos.x - startX3;
+                    const dy2 = pos.y - startY3;
                     const radius2 = Math.sqrt(dx2 * dx2 + dy2 * dy2);
                     currentShape.outerRadius(radius2);
                     currentShape.innerRadius(radius2 / 2);
@@ -383,11 +463,24 @@
             tempLayer.batchDraw();
         });
 
+        // 双击事件处理 - 主要用于完成多边形绘制
         stage.on('dblclick', function() {
             if (isDrawing && activeToolBtn && activeToolBtn.id === 'polygon' && polygonPoints.length >= 6) {
-                finishDrawing();
+                finishPolygon();
             }
         });
+
+        // 完成多边形绘制
+        function finishPolygon() {
+            if (polygonPoints.length < 6) return; // 至少需要3个点
+            
+            // 闭合多边形 - 不需要添加第一个点，因为我们设置了closed属性
+            currentShape.closed(true);
+            tempLayer.batchDraw();
+            
+            // 完成绘制
+            finishDrawing();
+        }
 
         stage.on('mouseup', function() {
             if (!isDrawing || !currentShape || !activeToolBtn) return;
@@ -406,13 +499,22 @@
             let isValidShape = false;
             
             if (activeToolBtn.id === 'rectangle') {
-                isValidShape = currentShape.width() !== 0 && currentShape.height() !== 0;
+                isValidShape = Math.abs(currentShape.width()) > 5 && Math.abs(currentShape.height()) > 5;
+                // 处理负值宽度/高度
+                if (currentShape.width() < 0) {
+                    currentShape.x(currentShape.x() + currentShape.width());
+                    currentShape.width(Math.abs(currentShape.width()));
+                }
+                if (currentShape.height() < 0) {
+                    currentShape.y(currentShape.y() + currentShape.height());
+                    currentShape.height(Math.abs(currentShape.height()));
+                }
             } else if (activeToolBtn.id === 'polygon') {
                 isValidShape = polygonPoints.length >= 6; // 至少3个点
             } else if (activeToolBtn.id === 'circle') {
-                isValidShape = currentShape.radius() > 0;
+                isValidShape = currentShape.radius() > 5;
             } else if (activeToolBtn.id === 'star') {
-                isValidShape = currentShape.outerRadius() > 0;
+                isValidShape = currentShape.outerRadius() > 5;
             }
             
             if (isValidShape) {
@@ -424,14 +526,15 @@
                 
                 // 为新形状添加事件处理
                 addShapeEventHandlers(newShape);
+                roomLayer.batchDraw();
             }
             
             // 清理临时图形
             currentShape.remove();
             currentShape = null;
             polygonPoints = [];
+            firstPoint = null;
             tempLayer.draw();
-            roomLayer.draw();
             
             // 重置为选择模式
             document.getElementById('select').click();
