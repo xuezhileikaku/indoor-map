@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>室内地图编辑器</title>
+    <script src="https://unpkg.com/konva@8.4.3/konva.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+        }
+        .container {
+            display: flex;
+            width: 100vw;
+            height: 100vh;
+        }
+        .tools {
+            width: 200px;
+            background-color: #f0f0f0;
+            padding: 10px;
+            box-shadow: 2px 0 5px rgba(0,0,0,0.1);
+            overflow-y: auto;
+        }
+        .canvas-container {
+            flex: 1;
+            background-color: #e5e5e5;
+        }
+        .tool-section {
+            margin-bottom: 20px;
+        }
+        .tool-section h3 {
+            margin-top: 0;
+            padding-bottom: 5px;
+            border-bottom: 1px solid #ddd;
+        }
+        .tool-btn {
+            display: block;
+            width: 100%;
+            padding: 8px;
+            margin-bottom: 5px;
+            background-color: #fff;
+            border: 1px solid #ddd;
+            cursor: pointer;
+            text-align: center;
+            border-radius: 4px;
+        }
+        .tool-btn:hover {
+            background-color: #eaeaea;
+        }
+        .tool-btn.active {
+            background-color: #4CAF50;
+            color: white;
+        }
+        .color-picker {
+            margin-top: 5px;
+            width: 100%;
+        }
+        #coordsInfo {
+            position: absolute;
+            bottom: 10px;
+            left: 220px;
+            background-color: rgba(255, 255, 255, 0.8);
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 12px;
+            max-width: 300px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="tools">
+            <div class="tool-section">
+                <h3>绘制工具</h3>
+                <button class="tool-btn" id="rectangle">矩形房间</button>
+                <button class="tool-btn" id="polygon">多边形房间</button>
+                <button class="tool-btn" id="circle">圆形展位</button>
+                <button class="tool-btn" id="star">星形展位</button>
+            </div>
+
+            <div class="tool-section">
+                <h3>颜色</h3>
+                <label>填充颜色</label>
+                <input type="color" id="fillColor" class="color-picker" value="#ffffff">
+                <label>边框颜色</label>
+                <input type="color" id="strokeColor" class="color-picker" value="#000000">
+            </div>
+
+            <div class="tool-section">
+                <h3>操作</h3>
+                <button class="tool-btn" id="select">选择</button>
+                <button class="tool-btn" id="delete">删除选中</button>
+                <button class="tool-btn" id="clear">清空画布</button>
+            </div>
+        </div>
+        <div class="canvas-container" id="canvas-container"></div>
+        <div id="coordsInfo">坐标信息会显示在这里</div>
+    </div>
+
+    <script>
+        // JavaScript代码将放在这里
+    </script>
+</body>
+</html>
